@@ -133,11 +133,8 @@ res_binary <- jmma(
   outcome = "RMST_pseudo",
   use_pseudo = TRUE,
   tau = 5,
-  event_code = 1,
   time_var = "GF_time_cr",
-  status_var = "GF_status_cr",
-  n_boot = 10,
-  conf_level = 0.95
+  status_var = "GF_status_cr"
 )
 res_binary
 summary(res_binary)
@@ -146,7 +143,7 @@ plot(res_binary)
 ## Three-category exposure: Moderate and Intensive versus Control
 
 res_multi <- jmma(
-  data = simdata,
+  data = jmmadata,
   exposure = "treatment",
   comparison = c("Moderate", "Intensive"),
   reference = "Control",
@@ -155,34 +152,15 @@ res_multi <- jmma(
   outcome = "RMST_pseudo",
   use_pseudo = TRUE,
   tau = 5,
-  event_code = 1,
   time_var = "GF_time_cr",
-  status_var = "GF_status_cr",
-  n_boot = 10,
-  conf_level = 0.95
+  status_var = "GF_status_cr"
 )
 
-res_binary
-summary(res_binary)
-plot(res_binary)
+res_multi
+summary(res_multi)
+plot(res_multi)
 
-## TE, NDE, NIE and marginal confidence intervals
-res_multi$results
 
-## Joint tests of NDE = 0 and NIE = 0
-res_multi$joint_tests
-
-## Intensive versus Control
-res_multi$inference[["Intensive"]]$results
-
-## Moderate versus Control
-res_multi$inference[["Moderate"]]$results
-
-## Bootstrap covariance among TE, NDE and NIE
-res_multi$inference[["Intensive"]]$bootstrap_covariance
-
-## Mediation decomposition diagnostic
-res_multi$inference[["Intensive"]]$decomposition_diagnostic
 }
 }
 \keyword{models}

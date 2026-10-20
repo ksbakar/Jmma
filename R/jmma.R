@@ -116,30 +116,31 @@ jmma <- function(data,
       P_value
     )
   # Return fitted models, inference, and analysis dataset
-  out <- list(
-    data = dd,
-    fits = fits,
-    inference = inference,
-    results = results,
-    joint_tests = joint_tests,
-    settings = list(
-      exposure = exposure,
-      reference = reference,
-      comparisons = names(fits),
-      covariates = covariates,
-      mediators = mediators,
-      outcome = outcome,
-      use_pseudo = use_pseudo,
-      tau = tau,
-      event_code = event_code,
-      time_var = time_var,
-      status_var = status_var,
-      n_boot = n_boot,
-      conf_level = conf_level,
-      analysis_sample_size = nrow(dd)
-    )
+  out <- structure(
+    list(
+      data = dd,
+      fits = fits,
+      inference = inference,
+      results = results,
+      joint_tests = joint_tests,
+      settings = list(
+        exposure = exposure,
+        reference = reference,
+        comparisons = names(fits),
+        covariates = covariates,
+        mediators = mediators,
+        outcome = outcome,
+        use_pseudo = use_pseudo,
+        tau = tau,
+        event_code = event_code,
+        time_var = time_var,
+        status_var = status_var,
+        n_boot = n_boot,
+        conf_level = conf_level,
+        analysis_sample_size = nrow(dd)
+      )
+    ), class = "Jmma"
   )
-  class(out) <- "Jmma"
   out
 }
 

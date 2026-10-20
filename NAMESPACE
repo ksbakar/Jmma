@@ -1,4 +1,3 @@
-exportPattern("^[[:alpha:]]+")
 
 import(mma)
 import(cmprsk)
@@ -12,8 +11,14 @@ importFrom("stats", "complete.cases", "cov", "pchisq", "qchisq",
              "qnorm")
 importFrom("utils", "tail")
 
+S3method(print,Jmma)
+S3method(summary,Jmma)
+S3method(print, summary.Jmma)
+S3method(plot,Jmma)
+
 export(
-       "jmma",
+     "jmma",
 	   "summary.Jmma",
+     "print.summary.Jmma",
 	   "plot.Jmma",
 	   "print.Jmma")
