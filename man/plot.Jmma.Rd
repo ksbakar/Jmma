@@ -1,4 +1,3 @@
-
 \name{plot.Jmma}
 \alias{plot.Jmma}
 \title{Plot Joint Mediation Analysis Results}

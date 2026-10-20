@@ -22,7 +22,7 @@ Authors@R:
              comment = c(ORCID = "0000-0001-8422-7269"))
 			 )
 Depends: R (>= 4.5)
-Description: The package supports joint multiple mediation analysis for competing-risks restricted mean survival time using pseudo-values and g-computation.
+Description: The package supports joint multiple mediation analysis for model with (1) competing-risks restricted mean survival time using pseudo-values and g-computation.
 License: GPL (>= 2)
 Imports: dplyr, cmprsk, mma, tidyr, ggplot2
 Encoding: UTF-8

@@ -1,7 +1,9 @@
 \name{jmma}
 \alias{jmma}
-\title{Joint Multiple Mediation Analysis (JMMA): Competing-Risks RMST using Pseudo-Values and G-Computation}
+\title{Joint Multiple Mediation Analysis (JMMA)}
 \description{
+Model: Competing-Risks RMST using Pseudo-Values and G-Computation
+
 Performs joint multiple mediation analysis and provides marginal and joint statistical inference for the total effect (TE), natural direct effect (NDE), and natural indirect effect (NIE).
 
 The function supports binary and categorical exposure variables. For categorical exposures, each specified comparison category is analyzed separately against a reference category.
