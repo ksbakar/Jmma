@@ -1,0 +1,19 @@
+exportPattern("^[[:alpha:]]+")
+
+import(mma)
+import(cmprsk)
+import(dplyr)
+import(tidyr)
+import(ggplot2)
+
+importFrom("graphics", "abline", "axis", "lines", "par", "points",
+             "segments")
+importFrom("stats", "complete.cases", "cov", "pchisq", "qchisq",
+             "qnorm")
+importFrom("utils", "tail")
+
+export(
+       "jmma",
+	   "summary.Jmma",
+	   "plot.Jmma",
+	   "print.Jmma")

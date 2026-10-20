@@ -1,0 +1,29 @@
+Package: Jmma
+Title: Joint Multiple Mediation Analysis (JMMA)
+Version: 1.0.1
+Date: 2026-11-01
+Authors@R: 
+    c(person(given = "K. Shuvo",
+             family = "Bakar",
+             role = c("aut", "cre"),
+             email = "shuvo.bakar@gmail.com",
+             comment = c(ORCID = "0000-0003-3215-4496")),
+      person(given = "Farzaneh",
+             family = "Boroumand",
+             role = "ctb",
+             comment = c(ORCID = "0000-0003-2972-3969")),
+      person(given = "Armando",
+             family = "Teixeira-Pinto",
+             role = "ctb",
+             comment = c(ORCID = "0000-0002-9389-2516")),
+      person(given = "Germaine",
+             family = "Wong",
+             role = "ctb",
+             comment = c(ORCID = "0000-0001-8422-7269"))
+			 )
+Depends: R (>= 4.5)
+Description: The package supports joint multiple mediation analysis for competing-risks restricted mean survival time using pseudo-values and g-computation.
+License: GPL (>= 2)
+Imports: dplyr, cmprsk, mma, tidyr, ggplot2
+Encoding: UTF-8
+LazyData: true
