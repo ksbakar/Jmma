@@ -138,9 +138,22 @@ res_binary <- jmma(
   time_var = "GF_time_cr",
   status_var = "GF_status_cr"
 )
+
 res_binary
 summary(res_binary)
+
+# Overall effects: TE, NDE, and total NIE
 plot(res_binary)
+plot(res_binary, type = "forest", comparison = "Intervention")
+
+# Joint NDE-NIE confidence ellipse
+plot(res_binary, type = "joint")
+plot(res_binary, type = "joint", comparison = "Intervention")
+
+# Separate forest plot for mediator-specific indirect effects
+plot(res_binary, type = "indirect")
+plot(res_binary, type = "indirect", comparison = "Intervention")
+
 
 ## Three-category exposure: Moderate and Intensive versus Control
 
@@ -160,8 +173,21 @@ res_multi <- jmma(
 
 res_multi
 summary(res_multi)
-plot(res_multi)
 
+# Overall effects: TE, NDE, and total NIE
+plot(res_multi)
+plot(res_multi, type = "forest", comparison = "Moderate")
+plot(res_multi, type = "forest", comparison = "Intensive")
+
+# Joint NDE-NIE confidence ellipse
+plot(res_multi, type = "joint")
+plot(res_multi, type = "joint", comparison = "Moderate")
+plot(res_multi, type = "joint", comparison = "Intensive")
+
+# Separate forest plot for mediator-specific indirect effects
+plot(res_multi, type = "indirect")
+plot(res_multi, type = "indirect", comparison = "Moderate")
+plot(res_multi, type = "indirect", comparison = "Intensive")
 
 }
 }

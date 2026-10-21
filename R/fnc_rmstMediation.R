@@ -249,90 +249,225 @@ run_mma_multiple <- function(data,
 
 joint_mediation_inference <- function(fit, conf_level = 0.95) {
 
-  # Extract original estimates and bootstrap results
+  # Extract estimates and bootstrap results
   bootsresults <- fit$a.binx$bootsresults
-  nie_col <- "y1.all"
-  theta_hat <- c(
-    TE  = as.numeric(fit$a.binx$estimation$te),
-    NDE = as.numeric(fit$a.binx$estimation$de),
-    NIE = as.numeric(fit$a.binx$estimation$ie[1])
+  estimation <- fit$a.binx$estimation
+
+  # Helper: extract the "est" row from an MMA effect table
+  extract_mma_estimates <- function(x, effect_name = "effect") {
+    if (is.null(x)) {
+      stop("MMA is missing the ", effect_name, " estimates.")
+    }
+
+    if (is.data.frame(x) || is.matrix(x)) {
+      rn <- rownames(x)
+
+      if (!is.null(rn) && "est" %in% rn) {
+        ans <- as.numeric(x["est", , drop = TRUE])
+        names(ans) <- colnames(x)
+        return(ans)
+      }
+
+      # Also allow a one-row matrix/data frame
+      if (nrow(x) == 1L) {
+        ans <- as.numeric(x[1, , drop = TRUE])
+        names(ans) <- colnames(x)
+        return(ans)
+      }
+
+      stop("Could not identify the 'est' row in ", effect_name, ".")
+    }
+
+    ans <- as.numeric(x)
+    names(ans) <- names(x)
+    ans
+  }
+
+  # Point estimates
+  te_hat <- as.numeric(estimation$te)[1]
+  nde_hat <- as.numeric(estimation$de)[1]
+
+  ie_hat <- extract_mma_estimates(
+    estimation$ie,
+    "indirect effects"
   )
-  if (length(theta_hat) != 3L || any(!is.finite(theta_hat))) {
+
+  if (is.null(names(ie_hat)) || any(names(ie_hat) == "")) {
+    stop("MMA indirect-effect estimates must have named columns.")
+  }
+
+  # The total indirect effect is the overall NIE
+  if (!"y1.all" %in% names(ie_hat)) {
+    stop("Could not find 'y1.all' in MMA indirect-effect estimates.")
+  }
+
+  theta_hat <- c(
+    TE = te_hat,
+    NDE = nde_hat,
+    NIE = unname(ie_hat["y1.all"])
+  )
+
+  if (any(!is.finite(theta_hat))) {
     stop("TE, NDE, and NIE point estimates must all be finite.")
   }
-  # Extract bootstrap estimates.
-  te_boot  <- as.numeric(bootsresults$te)
+
+  # Bootstrap estimates for total, direct, and indirect effects
+  te_boot <- as.numeric(bootsresults$te)
   nde_boot <- as.numeric(bootsresults$de)
-  nie_boot <- as.numeric(bootsresults$ie$pred[, nie_col])
+
+  ie_boot <- bootsresults$ie$pred
+
+  if (is.null(dim(ie_boot))) {
+    stop("MMA bootstrap indirect effects must be a matrix.")
+  }
+
+  ie_boot <- as.matrix(ie_boot)
+
+  if (!"y1.all" %in% colnames(ie_boot)) {
+    stop("Could not find 'y1.all' in bootstrap indirect effects.")
+  }
+
   if (length(te_boot) != length(nde_boot) ||
-      length(te_boot) != length(nie_boot)) {
+      length(te_boot) != nrow(ie_boot)) {
     stop("Bootstrap estimates must have the same number of replicates.")
   }
+
+  # Preserve paired bootstrap replicates for TE, NDE, and total NIE
   boot_mat <- cbind(
-    TE  = te_boot,
+    TE = te_boot,
     NDE = nde_boot,
-    NIE = nie_boot
+    NIE = as.numeric(ie_boot[, "y1.all"])
   )
-  # Retain paired, complete bootstrap replicates.
-  boot_mat <- boot_mat[
-    complete.cases(boot_mat) & apply(boot_mat, 1, function(x) all(is.finite(x))),
-    , drop = FALSE]
+
+  valid <- complete.cases(boot_mat) &
+    apply(boot_mat, 1, function(z) all(is.finite(z)))
+
+  boot_mat <- boot_mat[valid, , drop = FALSE]
+
   B <- nrow(boot_mat)
+
   if (B < 2L) {
     stop("At least two complete bootstrap replicates are required.")
   }
-  # Sample size and bootstrap covariance
+
   n <- nrow(fit$a.binx$data$x)
+
   if (length(n) != 1L || !is.finite(n) || n <= 0) {
     stop("Could not determine a valid original sample size.")
   }
-  # Covariance of the bootstrap estimators, on the estimator scale.
+
+  # Bootstrap covariance for TE, NDE, and total NIE
   cov_boot <- cov(boot_mat)
-  # Estimate of the asymptotic covariance of sqrt(n) * theta_hat.
-  Sigma_hat <- n * cov_boot
-  # Numerical symmetrization.
   cov_boot <- (cov_boot + t(cov_boot)) / 2
+
+  Sigma_hat <- n * cov_boot
   Sigma_hat <- (Sigma_hat + t(Sigma_hat)) / 2
+
   effect_names <- c("TE", "NDE", "NIE")
   dimnames(cov_boot) <- list(effect_names, effect_names)
   dimnames(Sigma_hat) <- list(effect_names, effect_names)
-  # Marginal standard errors and Wald confidence intervals
+
+  # Marginal estimates and Wald confidence intervals
   SE <- sqrt(pmax(diag(cov_boot), 0))
   names(SE) <- effect_names
+
   alpha <- 1 - conf_level
   z_crit <- qnorm(1 - alpha / 2)
-  lower <- theta_hat - z_crit * SE
-  upper <- theta_hat + z_crit * SE
+
   results <- data.frame(
     Effect = effect_names,
     Estimate = unname(theta_hat),
     SE = unname(SE),
-    Lower_CI = unname(lower),
-    Upper_CI = unname(upper),
+    Lower_CI = unname(theta_hat - z_crit * SE),
+    Upper_CI = unname(theta_hat + z_crit * SE),
     row.names = NULL
   )
-  # Joint multivariate inference for NDE and NIE
-  # NDE and NIE are the two independent effects.
+
+  # ----------------------------------------------------------
+  # NEW: Mediator-specific indirect effects
+  # ----------------------------------------------------------
+
+  # Include every MMA indirect-effect column
+  # which is already reported as NIE above.
+  mediator_names <- setdiff(names(ie_hat), c("y1.all", "y1.j1"))
+
+  missing_boot_cols <- setdiff(mediator_names, colnames(ie_boot))
+
+  if (length(missing_boot_cols) > 0L) {
+    stop(
+      "Missing bootstrap indirect-effect columns: ",
+      paste(missing_boot_cols, collapse = ", ")
+    )
+  }
+
+  mediator_results <- lapply(mediator_names, function(med) {
+
+    est <- unname(ie_hat[med])
+    b <- as.numeric(ie_boot[, med])
+
+    # Use only finite bootstrap values for this mediator
+    b <- b[is.finite(b)]
+
+    if (length(b) < 2L) {
+      stop(
+        "Fewer than two valid bootstrap estimates for: ", med
+      )
+    }
+
+    se <- stats::sd(b)
+
+    data.frame(
+      Comparison = NA_character_,
+      Effect = paste0("Indirect: ", sub("^y1\\.", "", med)),
+      Mediator = sub("^y1\\.", "", med),
+      Estimate = est,
+      SE = se,
+      Lower_CI = est - z_crit * se,
+      Upper_CI = est + z_crit * se,
+      row.names = NULL
+    )
+  })
+
+  mediator_results <- if (length(mediator_results)) {
+    dplyr::bind_rows(mediator_results)
+  } else {
+    data.frame(
+      Comparison = character(),
+      Effect = character(),
+      Mediator = character(),
+      Estimate = numeric(),
+      SE = numeric(),
+      Lower_CI = numeric(),
+      Upper_CI = numeric()
+    )
+  }
+
+  # ----------------------------------------------------------
+  # Existing joint Wald test for NDE = 0 and NIE = 0
+  # ----------------------------------------------------------
+
   gamma_hat <- theta_hat[c("NDE", "NIE")]
   gamma_boot <- boot_mat[, c("NDE", "NIE"), drop = FALSE]
-  # Covariance of the two effect estimators.
+
   cov_gamma_boot <- cov(gamma_boot)
-  # Asymptotic covariance of sqrt(n) * (NDE, NIE).
-  V_gamma_hat <- n * cov_gamma_boot
   cov_gamma_boot <- (cov_gamma_boot + t(cov_gamma_boot)) / 2
+
+  V_gamma_hat <- n * cov_gamma_boot
   V_gamma_hat <- (V_gamma_hat + t(V_gamma_hat)) / 2
+
   dimnames(cov_gamma_boot) <- list(
     c("NDE", "NIE"), c("NDE", "NIE")
   )
   dimnames(V_gamma_hat) <- list(
     c("NDE", "NIE"), c("NDE", "NIE")
   )
-  # Check whether the covariance is positive definite.
+
   eig_gamma <- eigen(
     cov_gamma_boot,
     symmetric = TRUE,
     only.values = TRUE
   )$values
+
   if (any(!is.finite(eig_gamma)) || min(eig_gamma) <= 0) {
     stop(
       paste(
@@ -341,31 +476,24 @@ joint_mediation_inference <- function(fit, conf_level = 0.95) {
       )
     )
   }
-  # Joint Wald test:
-  # H0: NDE = 0 and NIE = 0.
-  # The test has 2 degrees of freedom.
+
   joint_wald_stat <- drop(
-    t(gamma_hat) %*%
-      solve(cov_gamma_boot, gamma_hat)
+    t(gamma_hat) %*% solve(cov_gamma_boot, gamma_hat)
   )
+
   joint_p_value <- pchisq(
-    joint_wald_stat,
-    df = 2,
-    lower.tail = FALSE
+    joint_wald_stat, df = 2, lower.tail = FALSE
   )
+
   joint_test <- data.frame(
     Test = "Joint Wald test: NDE = 0 and NIE = 0",
     Statistic = joint_wald_stat,
     DF = 2,
     P_value = joint_p_value
   )
-  # Joint Wald confidence region for NDE and NIE
-  # Region:
-  # (gamma_hat - gamma)' cov_gamma_boot^{-1}
-  # (gamma_hat - gamma) <= chi-square critical value.
-  #
-  # This defines an ellipse in the NDE-NIE plane.
+
   chi2_crit <- qchisq(conf_level, df = 2)
+
   joint_region <- list(
     confidence_level = conf_level,
     chi_square_critical_value = chi2_crit,
@@ -377,41 +505,42 @@ joint_mediation_inference <- function(fit, conf_level = 0.95) {
       "(gamma_hat - gamma) <= ", signif(chi2_crit, 6)
     )
   )
-  # Check the mediation decomposition
-  # Point-estimate discrepancy.
-  point_decomposition_error <-
-    unname(theta_hat["TE"] - theta_hat["NDE"] - theta_hat["NIE"])
-  # Bootstrap decomposition discrepancies.
+
+  # Decomposition diagnostic for total TE, NDE, and NIE
+  point_decomposition_error <- unname(
+    theta_hat["TE"] - theta_hat["NDE"] - theta_hat["NIE"]
+  )
+
   bootstrap_decomposition_error <-
-    boot_mat[, "TE"] -  boot_mat[, "NDE"] -  boot_mat[, "NIE"]
+    boot_mat[, "TE"] - boot_mat[, "NDE"] - boot_mat[, "NIE"]
+
   decomposition_diagnostic <- list(
     point_estimate_error = point_decomposition_error,
     max_absolute_bootstrap_error =
       max(abs(bootstrap_decomposition_error)),
     bootstrap_errors = bootstrap_decomposition_error
   )
-  # Rank diagnostic for the full effect covariance matrix.
+
   eig_full <- eigen(
     cov_boot,
     symmetric = TRUE,
     only.values = TRUE
   )$values
+
   tolerance <- max(abs(eig_full)) * 1e-8
   estimated_rank <- sum(eig_full > tolerance)
-  # Return results
+
   list(
     results = results,
+    mediator_results = mediator_results,
     theta_hat = theta_hat,
-    # Covariance of the estimators and asymptotic covariance.
     bootstrap_covariance = cov_boot,
     Sigma_hat = Sigma_hat,
-    # Joint inference for NDE and NIE.
     gamma_hat = gamma_hat,
     covariance_NDE_NIE = cov_gamma_boot,
     V_gamma_hat = V_gamma_hat,
     joint_wald_test = joint_test,
     joint_confidence_region = joint_region,
-    # Diagnostics.
     decomposition_diagnostic = decomposition_diagnostic,
     estimated_covariance_rank = estimated_rank,
     bootstrap_matrix = boot_mat,
@@ -420,6 +549,8 @@ joint_mediation_inference <- function(fit, conf_level = 0.95) {
     conf_level = conf_level
   )
 }
+
+
 ################################################################################
 ################################################################################
 

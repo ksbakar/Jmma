@@ -10,7 +10,7 @@ direct and natural indirect effects.
 }
 \usage{
 \method{plot}{Jmma}(x,
-     type = c("forest", "joint"),
+     type = c("forest", "indirect", "joint"),
      comparison = NULL,
      conf_level = NULL,
      digits = 3,
@@ -41,6 +41,10 @@ direct and natural indirect effects.
     For \code{type = "joint"}, each selected comparison is displayed as a
     separate confidence ellipse. If \code{NULL}, all available comparisons
     are plotted in separate panels. A single comparison produces one plot.
+
+    For \code{type = "indirect"}, the plot includes mediator-specific
+    natural indirect effect (NIE) for each selected comparison.
+    If \code{NULL}, all available comparisons are included.
   }
   \item{conf_level}{
     Numeric scalar specifying the confidence level for the plotted
@@ -59,10 +63,9 @@ direct and natural indirect effects.
   }
 }
 \details{
-When \code{type = "forest"}, the method displays point estimates and
-confidence intervals for the TE, NDE, and NIE for each selected exposure
-comparison. A vertical reference line at zero is included to facilitate
-interpretation of the estimated effects.
+When \code{type = "forest"} or \code{type = "indirect"}, the method displays
+point estimates and confidence intervals. A vertical reference line at zero
+is included to facilitate interpretation of the estimated effects.
 
 When \code{type = "joint"}, the method displays a two-dimensional Wald-type
 joint confidence ellipse for the NDE and NIE for each selected comparison.

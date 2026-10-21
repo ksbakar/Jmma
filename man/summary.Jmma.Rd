@@ -8,7 +8,7 @@ estimates, joint Wald tests for the natural direct and indirect effects, and boo
 matrices can be retained for display by the associated print method.
 }
 \usage{
-\method{summary}{Jmma}(object, cov_matrix = FALSE, ...)
+\method{summary}{Jmma}(object, cov_matrix = FALSE, diagnostics = FALSE, ...)
 
 \method{print}{summary.Jmma}(x, digits = 4, ...)
 }
@@ -23,6 +23,10 @@ matrices can be retained for display by the associated print method.
     effect estimates, the bootstrap covariance matrix of the natural
     direct and indirect effects, and their corresponding asymptotic
     covariance matrices. Defaults to \code{FALSE}.
+  }
+  \item{diagnostics}{
+    Logical. If \code{TRUE}, the print method displays the bootstrap
+    and decomposition diagnostics. Defaults to \code{FALSE}.
   }
   \item{x}{
     An object of class \code{"summary.Jmma"}, returned by

@@ -85,6 +85,7 @@ jmma <- function(data,
     )
   })
   # Combine marginal estimates and confidence intervals
+  # Combine total, direct, and total indirect effects
   results <- dplyr::bind_rows(
     lapply(names(inference), function(comp) {
       out <- inference[[comp]]$results
@@ -100,6 +101,29 @@ jmma <- function(data,
       Lower_CI,
       Upper_CI
     )
+  # Combine mediator-specific indirect effects
+  mediator_results <- dplyr::bind_rows(
+    lapply(names(inference), function(comp) {
+      out <- inference[[comp]]$mediator_results
+      out$Comparison <- comp
+      out
+    })
+  )
+  # Append mediator-specific rows to the main results table
+  if (nrow(mediator_results) > 0L) {
+    results <- dplyr::bind_rows(
+      results,
+      mediator_results %>%
+        dplyr::select(
+          Comparison,
+          Effect,
+          Estimate,
+          SE,
+          Lower_CI,
+          Upper_CI
+        )
+    )
+  }
   # Combine joint NDE-NIE Wald tests
   joint_tests <- dplyr::bind_rows(
     lapply(names(inference), function(comp) {
@@ -122,6 +146,7 @@ jmma <- function(data,
       fits = fits,
       inference = inference,
       results = results,
+      mediator_results = mediator_results,
       joint_tests = joint_tests,
       settings = list(
         exposure = exposure,
