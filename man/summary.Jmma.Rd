@@ -8,7 +8,8 @@ estimates, joint Wald tests for the natural direct and indirect effects, and boo
 matrices can be retained for display by the associated print method.
 }
 \usage{
-\method{summary}{Jmma}(object, cov_matrix = FALSE, diagnostics = FALSE, ...)
+\method{summary}{Jmma}(object, cov_matrix = FALSE,
+                       diagnostics = FALSE, wald_test = FALSE, ...)
 
 \method{print}{summary.Jmma}(x, digits = 4, ...)
 }
@@ -27,6 +28,10 @@ matrices can be retained for display by the associated print method.
   \item{diagnostics}{
     Logical. If \code{TRUE}, the print method displays the bootstrap
     and decomposition diagnostics. Defaults to \code{FALSE}.
+  }
+  \item{wald_test}{
+    Logical. If \code{TRUE}, the print method displays the joint Wald-test.
+    Defaults to \code{FALSE}.
   }
   \item{x}{
     An object of class \code{"summary.Jmma"}, returned by
@@ -51,7 +56,7 @@ effect (NDE), and natural indirect effect (NIE), along with their associated
 standard errors and confidence intervals, as available in the fitted
 object.
 
-For each comparison, the joint Wald test evaluates the null hypothesis
+For each comparison, the joint Wald-test evaluates the null hypothesis
 \deqn{H_0: \mathrm{NDE} = 0 \quad \text{and} \quad \mathrm{NIE} = 0}
 against the alternative hypothesis
 \deqn{H_1: \mathrm{NDE} \ne 0 \quad \text{or} \quad \mathrm{NIE} \ne 0.}

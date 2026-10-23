@@ -33,6 +33,7 @@ print.Jmma <- function(x, digits = 3, ...) {
 }
 
 
+
 ################################################################################
 # Summary method for Jmma objects
 ################################################################################
@@ -40,6 +41,7 @@ print.Jmma <- function(x, digits = 3, ...) {
 summary.Jmma <- function(object,
                          cov_matrix = FALSE,
                          diagnostics = FALSE,
+                         wald_test = FALSE,
                          ...) {
 
   if (!inherits(object, "Jmma")) {
@@ -56,32 +58,49 @@ summary.Jmma <- function(object,
       is.na(diagnostics)) {
     stop("'diagnostics' must be TRUE or FALSE.")
   }
+  if (!is.logical(wald_test) ||
+      length(wald_test) != 1L ||
+      is.na(wald_test)) {
+    stop("'wald_test' must be TRUE or FALSE.")
+  }
   # Collect diagnostics for each comparison
-  diagnostics_table <- do.call(
-    rbind,
-    lapply(names(object$inference), function(comp) {
-      inf <- object$inference[[comp]]
-      dec <- inf$decomposition_diagnostic
-      data.frame(
-        Comparison = comp,
-        Bootstrap_replicates = inf$n_boot,
-        Sample_size = inf$n,
-        Covariance_rank = inf$estimated_covariance_rank,
-        TE_minus_NDE_minus_NIE = dec$point_estimate_error,
-        Max_abs_bootstrap_decomposition_error =
-          dec$max_absolute_bootstrap_error,
-        row.names = NULL
-      )
-    })
-  )
+  diagnostics_list <- lapply(names(object$inference), function(comp) {
+    inf <- object$inference[[comp]]
+    dec <- inf$decomposition_diagnostic
+    data.frame(
+      Comparison = comp,
+      Bootstrap_replicates = inf$n_boot,
+      Sample_size = inf$n,
+      Covariance_rank = inf$estimated_covariance_rank,
+      TE_minus_NDE_minus_NIE =
+        if (!is.null(dec)) dec$point_estimate_error else NA_real_,
+      Max_abs_bootstrap_decomposition_error =
+        if (!is.null(dec)) {
+          dec$max_absolute_bootstrap_error
+        } else {
+          NA_real_
+        },
+      row.names = NULL
+    )
+  })
+  diagnostics_table <- if (length(diagnostics_list)) {
+    do.call(rbind, diagnostics_list)
+  } else {
+    data.frame()
+  }
   rownames(diagnostics_table) <- NULL
-  # Store mediator-specific indirect effects
+  # Mediator-specific indirect effects
   mediator_results <- if (!is.null(object$mediator_results)) {
     object$mediator_results
-  } else if ("Effect" %in% names(object$results)) {
+  } else if (
+    !is.null(object$results) &&
+    "Effect" %in% names(object$results)
+  ) {
     object$results[
       grepl("^Indirect: ", object$results$Effect),
-      , drop = FALSE]
+      ,
+      drop = FALSE
+    ]
   } else {
     data.frame(
       Comparison = character(),
@@ -92,7 +111,12 @@ summary.Jmma <- function(object,
       Upper_CI = numeric()
     )
   }
-  # Store covariance matrices by comparison
+  # Helper: safely retrieve a field from the Jmma object
+  get_field <- function(name, default = NULL) {
+    value <- object[[name]]
+    if (is.null(value)) default else value
+  }
+  # Existing covariance matrices
   bootstrap_covariance <- lapply(
     object$inference,
     function(inf) inf$bootstrap_covariance
@@ -109,24 +133,48 @@ summary.Jmma <- function(object,
     object$inference,
     function(inf) inf$V_gamma_hat
   )
+  # All three joint Wald tests
+  joint_tests <- get_field("joint_tests")
+  mediator_joint_tests <- get_field("mediator_joint_tests")
+  nde_mediator_joint_tests <- get_field("nde_mediator_joint_tests")
+  # Joint confidence regions and additional covariance outputs
+  joint_confidence_regions <-
+    get_field("joint_confidence_regions")
+  mediator_joint_confidence_regions <-
+    get_field("mediator_joint_confidence_regions")
+  nde_mediator_joint_confidence_regions <-
+    get_field("nde_mediator_joint_confidence_regions")
   # Return summary object
   out <- list(
     settings = object$settings,
     results = object$results,
     mediator_results = mediator_results,
-    joint_tests = object$joint_tests,
+    # Joint tests
+    joint_tests = joint_tests,
+    mediator_joint_tests = mediator_joint_tests,
+    nde_mediator_joint_tests = nde_mediator_joint_tests,
+    # Joint confidence regions
+    joint_confidence_regions = joint_confidence_regions,
+    mediator_joint_confidence_regions =
+      mediator_joint_confidence_regions,
+    nde_mediator_joint_confidence_regions =
+      nde_mediator_joint_confidence_regions,
+    # Diagnostics and covariance matrices
     diagnostics = diagnostics_table,
     bootstrap_covariance = bootstrap_covariance,
     covariance_NDE_NIE = covariance_NDE_NIE,
     Sigma_hat = Sigma_hat,
     V_gamma_hat = V_gamma_hat,
+    # Full inference results
     inference = object$inference,
     cov_matrix = cov_matrix,
-    show_diagnostics = diagnostics
+    show_diagnostics = diagnostics,
+    show_wald_test = wald_test
   )
   class(out) <- "summary.Jmma"
   out
 }
+
 
 ################################################################################
 # Print method for summary.Jmma objects
@@ -142,14 +190,18 @@ print.summary.Jmma <- function(x, digits = 4, ...) {
   cat("Exposure:             ", x$settings$exposure, "\n", sep = "")
   cat("Reference:            ", x$settings$reference, "\n", sep = "")
   cat("Outcome:              ", x$settings$outcome, "\n", sep = "")
-  cat("Analysis sample size:  ", x$settings$analysis_sample_size, "\n", sep = "")
-  cat("Confidence level:      ", 100 * x$settings$conf_level, "%\n", sep = "")
+  cat("Analysis sample size:  ",
+      x$settings$analysis_sample_size, "\n", sep = "")
+  cat("Confidence level:      ",
+      100 * x$settings$conf_level, "%\n", sep = "")
   # Overall effects
   cat("\nTotal, direct, and total indirect effects\n")
   cat("----------------------------------------\n")
   main_results <- x$results[
     x$results$Effect %in% c("TE", "NDE", "NIE"),
-    , drop = FALSE]
+    ,
+    drop = FALSE
+  ]
   print(main_results, row.names = FALSE, digits = digits)
   # Mediator-specific indirect effects
   cat("\nMediator-specific indirect effects\n")
@@ -164,23 +216,65 @@ print.summary.Jmma <- function(x, digits = 4, ...) {
   } else {
     cat("No mediator-specific indirect effects available.\n")
   }
-  # Joint inference
-  cat("\nJoint Wald tests\n")
-  cat("----------------------------------------\n")
-  cat("Null hypothesis (H0): NDE = 0 and NIE = 0\n")
-  cat("Alternative (H1):     NDE != 0 or NIE != 0\n\n")
-  print(x$joint_tests, row.names = FALSE, digits = digits)
-  # Optionally print diagnostics
+  # Helper for safely printing joint tests
+  print_joint_test <- function(test, title, null_text, alt_text) {
+    cat("\n", title, "\n", sep = "")
+    cat("----------------------------------------\n")
+    cat("Null hypothesis (H0): ", null_text, "\n", sep = "")
+    cat("Alternative (H1):     ", alt_text, "\n\n", sep = "")
+    if (!is.null(test) &&
+        is.data.frame(test) &&
+        nrow(test) > 0L) {
+      print(test, row.names = FALSE, digits = digits)
+    } else {
+      cat("Joint test results are not available.\n")
+    }
+  }
+  # Optional wald_test
+  if (isTRUE(x$show_wald_test)) {
+    # Joint test 1: NDE and total NIE
+    print_joint_test(
+      test = x$joint_tests,
+      title = "Overall joint Wald test",
+      null_text = "NDE = 0 and total NIE = 0",
+      alt_text = "NDE != 0 or total NIE != 0"
+    )
+    # Joint test 2: all mediator-specific effects
+    print_joint_test(
+      test = x$mediator_joint_tests,
+      title = "Mediator-specific joint Wald test",
+      null_text = "All mediator-specific indirect effects = 0",
+      alt_text = "At least one mediator-specific indirect effect != 0"
+    )
+    # Joint test 3: NDE and all mediator-specific effects
+    print_joint_test(
+      test = x$nde_mediator_joint_tests,
+      title = "Combined direct and mediator-specific joint Wald test",
+      null_text = paste(
+        "NDE = 0 and all mediator-specific",
+        "indirect effects = 0"
+      ),
+      alt_text = paste(
+        "NDE != 0 or at least one mediator-specific",
+        "indirect effect != 0"
+      )
+    )
+  }
+  # Optional diagnostics
   if (isTRUE(x$show_diagnostics)) {
     cat("\nBootstrap and decomposition diagnostics\n")
     cat("----------------------------------------\n")
-    print(
-      x$diagnostics,
-      row.names = FALSE,
-      digits = digits
-    )
+    if (!is.null(x$diagnostics) && nrow(x$diagnostics) > 0L) {
+      print(
+        x$diagnostics,
+        row.names = FALSE,
+        digits = digits
+      )
+    } else {
+      cat("Diagnostics are not available.\n")
+    }
   }
-  # Optionally print covariance matrices
+  # Optional covariance matrices
   if (isTRUE(x$cov_matrix)) {
     for (comp in names(x$bootstrap_covariance)) {
       cat("\nBootstrap covariance matrix: ", comp, "\n", sep = "")
@@ -198,6 +292,28 @@ print.summary.Jmma <- function(x, digits = 4, ...) {
           comp, "\n", sep = "")
       cat("----------------------------------------\n")
       print(x$V_gamma_hat[[comp]], digits = digits)
+      # Print additional covariance matrices when present
+      inf <- x$inference[[comp]]
+      additional_covariances <- inf[
+        grepl("covariance|Sigma|V_gamma", names(inf),
+              ignore.case = TRUE)
+      ]
+      if (length(additional_covariances) > 0L) {
+        for (nm in names(additional_covariances)) {
+          # Avoid printing matrices already displayed above
+          if (nm %in% c(
+            "bootstrap_covariance",
+            "covariance_NDE_NIE",
+            "Sigma_hat",
+            "V_gamma_hat"
+          )) {
+            next
+          }
+          cat("\n", nm, ": ", comp, "\n", sep = "")
+          cat("----------------------------------------\n")
+          print(additional_covariances[[nm]], digits = digits)
+        }
+      }
     }
   }
   # Effect definitions
@@ -205,12 +321,12 @@ print.summary.Jmma <- function(x, digits = 4, ...) {
   cat("  TE  = Total effect\n")
   cat("  NDE = Natural direct effect\n")
   cat("  NIE = Total natural indirect effect\n")
-  cat("  Mediator-specific indirect effects = Indirect effects through individual mediators\n")
   invisible(x)
 }
 
+
 ################################################################################
-# Plot method for Jmma objects
+# Plot method for Jmma objects using ggplot2
 #
 # type = "forest":   TE, NDE, and total NIE
 # type = "indirect": mediator-specific indirect effects
@@ -227,10 +343,15 @@ plot.Jmma <- function(x,
   if (!inherits(x, "Jmma")) {
     stop("Object must inherit from class 'Jmma'.")
   }
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("Package 'ggplot2' is required.")
+  }
   type <- match.arg(type)
+
   if (is.null(conf_level)) {
     conf_level <- x$settings$conf_level
   }
+
   if (length(conf_level) != 1L ||
       !is.numeric(conf_level) ||
       !is.finite(conf_level) ||
@@ -238,93 +359,115 @@ plot.Jmma <- function(x,
       conf_level >= 1) {
     stop("'conf_level' must be between 0 and 1.")
   }
-  # Forest plot: TE, NDE, and total NIE
+  # Common ggplot2 theme
+  base_theme <- ggplot2::theme_minimal() +
+    ggplot2::theme(
+      plot.title = ggplot2::element_text(
+        face = "bold",
+        size = 13,
+        hjust = 0.5
+      ),
+      axis.title = ggplot2::element_text(size = 11),
+      axis.text = ggplot2::element_text(size = 10),
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.grid.major.y = ggplot2::element_blank(),
+      plot.margin = ggplot2::margin(10, 15, 10, 10)
+    )
+  # Helper for forest plots
+  forest_plot <- function(results, xlab, title) {
+    labels <- paste(
+      results$Comparison,
+      results$Effect,
+      sep = " : "
+    )
+    results$Label <- factor(
+      labels,
+      levels = rev(unique(labels))
+    )
+    ggplot2::ggplot(
+      results,
+      ggplot2::aes(y = Label)
+    ) +
+      ggplot2::geom_vline(
+        xintercept = 0,
+        linetype = "dashed",
+        color = "gray50",
+        linewidth = 0.6
+      ) +
+      ggplot2::geom_segment(
+        ggplot2::aes(
+          x = Lower_CI,
+          xend = Upper_CI,
+          yend = Label
+        ),
+        linewidth = 0.8
+      ) +
+      ggplot2::geom_point(
+        ggplot2::aes(x = Estimate),
+        size = 3
+      ) +
+      ggplot2::labs(
+        title = title,
+        x = xlab,
+        y = NULL
+      ) +
+      base_theme
+  }
+  # Overall effects forest plot
   if (type == "forest") {
-    results <- x$results
-    results <- results[
-      results$Effect %in% c("TE", "NDE", "NIE"),
-      , drop = FALSE]
+    results <- x$results[
+      x$results$Effect %in% c("TE", "NDE", "NIE"),
+      ,
+      drop = FALSE
+    ]
     if (!is.null(comparison)) {
       if (any(!comparison %in% results$Comparison)) {
         stop("Unknown comparison supplied to the forest plot.")
       }
       results <- results[
         results$Comparison %in% comparison,
-        , drop = FALSE]
+        ,
+        drop = FALSE
+      ]
     }
     if (nrow(results) == 0L) {
-      stop("No total, direct, or total indirect effects available to plot.")
+      stop(
+        "No total, direct, or total indirect effects available to plot."
+      )
     }
-    labels <- paste(
-      results$Comparison,
-      results$Effect,
-      sep = " : "
+    return(
+      forest_plot(
+        results = results,
+        xlab = "Effect estimate",
+        title = paste0(
+          "Overall mediation effects (",
+          100 * conf_level,
+          "% CI)"
+        )
+      )
     )
-    n_effects <- nrow(results)
-    ypos <- rev(seq_len(n_effects))
-    x_range <- range(
-      results$Lower_CI,
-      results$Upper_CI,
-      0, finite = TRUE
-    )
-    if (diff(x_range) == 0) {
-      x_range <- x_range + c(-1, 1)
-    }
-    padding <- 0.08 * diff(x_range)
-    x_range <- x_range + c(-padding, padding)
-    oldpar <- par(no.readonly = TRUE)
-    on.exit(par(oldpar), add = TRUE)
-    par(mar = c(5, 11, 4, 2) + 0.1)
-    plot(
-      results$Estimate,
-      ypos,
-      xlim = x_range,
-      ylim = c(0.5, n_effects + 0.5),
-      yaxt = "n",
-      ylab = "",
-      xlab = "Effect estimate",
-      main = paste0(
-        "Overall mediation effects (",
-        100 * conf_level,
-        "% confidence intervals)"
-      ),
-      pch = 19,
-      ...
-    )
-    axis(
-      side = 2,
-      at = ypos,
-      labels = labels,
-      las = 1,
-      cex.axis = 0.85
-    )
-    abline(v = 0, lty = 2, col = "gray50")
-    segments(
-      x0 = results$Lower_CI,
-      y0 = ypos,
-      x1 = results$Upper_CI,
-      y1 = ypos,
-      lwd = 1.5
-    )
-    points(results$Estimate, ypos, pch = 19)
-    return(invisible(x))
   }
   # Mediator-specific indirect effects forest plot
   if (type == "indirect") {
-    # Prefer the separately stored mediator-specific results.
     results <- x$mediator_results
-    # Backward compatibility: extract from the main results table.
+    # Backward compatibility
     if (is.null(results)) {
       if ("Effect" %in% names(x$results)) {
         results <- x$results[
           grepl("^Indirect: ", x$results$Effect),
-          , drop = FALSE]
+          ,
+          drop = FALSE
+        ]
       } else {
-        stop("Mediator-specific indirect effects are not available.")
+        stop(
+          "Mediator-specific indirect effects are not available."
+        )
       }
     }
     if (nrow(results) == 0L) {
-      stop("No mediator-specific indirect effects available to plot.")
+      stop(
+        "No mediator-specific indirect effects available to plot."
+      )
     }
     required_cols <- c(
       "Comparison",
@@ -340,7 +483,7 @@ plot.Jmma <- function(x,
         paste(missing_cols, collapse = ", ")
       )
     }
-    # Filter comparisons if requested.
+    # Filter comparisons
     if (!is.null(comparison)) {
       available <- unique(as.character(results$Comparison))
       if (any(!comparison %in% available)) {
@@ -354,87 +497,49 @@ plot.Jmma <- function(x,
       }
       results <- results[
         results$Comparison %in% comparison,
-        , drop = FALSE]
+        ,
+        drop = FALSE
+      ]
     }
     if (nrow(results) == 0L) {
-      stop("No mediator-specific indirect effects for selected comparisons.")
+      stop(
+        "No mediator-specific indirect effects for selected comparisons."
+      )
     }
-    # Remove any joint mediator effect if present.
+    # Exclude the joint mediator effect, if present
     results <- results[
       !grepl("^Indirect: j1$", results$Effect) &
         !grepl("^j1$", results$Effect),
-      , drop = FALSE]
+      ,
+      drop = FALSE
+    ]
     if (nrow(results) == 0L) {
-      stop("No individual mediator-specific effects available to plot.")
+      stop(
+        "No individual mediator-specific effects available to plot."
+      )
     }
-    # Label each row by comparison and mediator.
+    # Use the Mediator column when available
     mediator_label <- if ("Mediator" %in% names(results)) {
       as.character(results$Mediator)
     } else {
-      sub("^Indirect: ", "", as.character(results$Effect))
+      sub(
+        "^Indirect: ",
+        "",
+        as.character(results$Effect)
+      )
     }
-    labels <- paste(
-      results$Comparison,
-      mediator_label,
-      sep = " : "
+    results$Effect <- mediator_label
+    return(
+      forest_plot(
+        results = results,
+        xlab = "Mediator-specific indirect effect",
+        title = paste0(
+          "Mediator-specific indirect effects (",
+          100 * conf_level,
+          "% CI)"
+        )
+      )
     )
-    n_effects <- nrow(results)
-    ypos <- rev(seq_len(n_effects))
-    # Calculate plot range, including zero.
-    x_range <- range(
-      results$Lower_CI,
-      results$Upper_CI,
-      0,
-      finite = TRUE
-    )
-    if (diff(x_range) == 0) {
-      x_range <- x_range + c(-1, 1)
-    }
-    padding <- 0.08 * diff(x_range)
-    x_range <- x_range + c(-padding, padding)
-    oldpar <- par(no.readonly = TRUE)
-    on.exit(par(oldpar), add = TRUE)
-    # Expand left margin for long mediator names.
-    par(mar = c(5, 12, 4, 2) + 0.1)
-    plot(
-      results$Estimate,
-      ypos,
-      xlim = x_range,
-      ylim = c(0.5, n_effects + 0.5),
-      yaxt = "n",
-      ylab = "",
-      xlab = "Mediator-specific indirect effect",
-      main = paste0(
-        "Mediator-specific indirect effects (",
-        100 * conf_level,
-        "% confidence intervals)"
-      ),
-      pch = 19,
-      ...
-    )
-    axis(
-      side = 2,
-      at = ypos,
-      labels = labels,
-      las = 1,
-      cex.axis = 0.85
-    )
-    # Null reference line
-    abline(v = 0, lty = 2, col = "gray50")
-    # Confidence intervals
-    segments(
-      x0 = results$Lower_CI,
-      y0 = ypos,
-      x1 = results$Upper_CI,
-      y1 = ypos,
-      lwd = 1.5
-    )
-    points(
-      results$Estimate,
-      ypos,
-      pch = 19
-    )
-    return(invisible(x))
   }
   # Joint confidence ellipse(s) for NDE and NIE
   if (type == "joint") {
@@ -456,8 +561,19 @@ plot.Jmma <- function(x,
       }
       comparisons <- unique(comparison)
     }
-    draw_joint_ellipse <- function(comp) {
+    # Critical value for a two-dimensional confidence region
+    chi2_crit <- stats::qchisq(conf_level, df = 2)
+    angle <- seq(0, 2 * pi, length.out = 361)
+    circle <- rbind(
+      cos(angle),
+      sin(angle)
+    )
+    ellipse_data <- vector("list", length(comparisons))
+    center_data <- vector("list", length(comparisons))
+    for (i in seq_along(comparisons)) {
+      comp <- comparisons[i]
       inf <- x$inference[[comp]]
+      # Center of the joint confidence ellipse
       center <- inf$gamma_hat[c("NDE", "NIE")]
       if (length(center) != 2L ||
           any(!is.finite(center))) {
@@ -467,6 +583,7 @@ plot.Jmma <- function(x,
         )
       }
       center <- as.numeric(center)
+      # Covariance matrix on the estimator scale
       V <- inf$joint_confidence_region$
         covariance_estimator_scale
       if (!is.matrix(V) ||
@@ -479,86 +596,108 @@ plot.Jmma <- function(x,
       }
       V <- (V + t(V)) / 2
       eig <- eigen(V, symmetric = TRUE)
-      eig_values <- eig$values
-      if (any(!is.finite(eig_values)) ||
-          min(eig_values) <= 0) {
+      if (any(!is.finite(eig$values)) ||
+          min(eig$values) <= 0) {
         stop(
           "The NDE-NIE covariance matrix is not positive definite for: ",
           comp
         )
       }
-      chi2_crit <- qchisq(conf_level, df = 2)
-      angle <- seq(0, 2 * pi, length.out = 361)
-      circle <- rbind(
-        cos(angle),
-        sin(angle)
-      )
+      # Construct the ellipse
       transform <- eig$vectors %*%
-        diag(sqrt(eig_values * chi2_crit), nrow = 2)
+        diag(
+          sqrt(eig$values * chi2_crit),
+          nrow = 2
+        )
       ellipse <- sweep(
         transform %*% circle,
         MARGIN = 1,
         STATS = center,
         FUN = "+"
       )
-      x_range <- range(ellipse[1, ], 0)
-      y_range <- range(ellipse[2, ], 0)
-      x_padding <- max(diff(x_range) * 0.08, 0.01)
-      y_padding <- max(diff(y_range) * 0.08, 0.01)
-      x_range <- x_range + c(-x_padding, x_padding)
-      y_range <- y_range + c(-y_padding, y_padding)
-      plot(
-        ellipse[1, ],
-        ellipse[2, ],
-        type = "n",
-        xlim = x_range,
-        ylim = y_range,
-        xlab = "Natural direct effect (NDE)",
-        ylab = "Natural indirect effect (NIE)",
-        main = paste0(
-          comp,
-          " vs reference: ",
+      ellipse_data[[i]] <- data.frame(
+        NDE = ellipse[1, ],
+        NIE = ellipse[2, ],
+        Comparison = comp
+      )
+      center_data[[i]] <- data.frame(
+        NDE = center[1],
+        NIE = center[2],
+        Comparison = comp
+      )
+    }
+    ellipse_df <- do.call(rbind, ellipse_data)
+    center_df <- do.call(rbind, center_data)
+    ellipse_df$Comparison <- factor(
+      ellipse_df$Comparison,
+      levels = comparisons
+    )
+    center_df$Comparison <- factor(
+      center_df$Comparison,
+      levels = comparisons
+    )
+    p <- ggplot2::ggplot(
+      ellipse_df,
+      ggplot2::aes(
+        x = NDE,
+        y = NIE,
+        group = Comparison
+      )
+    ) +
+      ggplot2::geom_polygon(
+        fill = "steelblue",
+        alpha = 0.20,
+        color = NA
+      ) +
+      ggplot2::geom_path(
+        color = "steelblue",
+        linewidth = 1
+      ) +
+      ggplot2::geom_hline(
+        yintercept = 0,
+        linetype = "dashed",
+        color = "gray50",
+        linewidth = 0.6
+      ) +
+      ggplot2::geom_vline(
+        xintercept = 0,
+        linetype = "dashed",
+        color = "gray50",
+        linewidth = 0.6
+      ) +
+      ggplot2::geom_point(
+        data = center_df,
+        ggplot2::aes(x = NDE, y = NIE),
+        inherit.aes = FALSE,
+        size = 2.5
+      ) +
+      ggplot2::labs(
+        title = paste0(
+          "Joint NDE-NIE confidence region (",
           100 * conf_level,
-          "% joint confidence region"
+          "% CI)"
         ),
-        ...
-      )
-      abline(
-        h = 0,
-        v = 0,
-        lty = 2,
-        col = "gray50"
-      )
-      lines(
-        ellipse[1, ],
-        ellipse[2, ],
-        lwd = 2
-      )
-      points(
-        center[1],
-        center[2],
-        pch = 19
-      )
-      invisible(ellipse)
-    }
-    oldpar <- par(no.readonly = TRUE)
-    on.exit(par(oldpar), add = TRUE)
-    if (length(comparisons) == 1L) {
-      par(mar = c(5, 5, 4, 2) + 0.1)
-      draw_joint_ellipse(comparisons[1])
+        x = "Natural direct effect (NDE)",
+        y = "Natural indirect effect (NIE)"
+      ) +
+      base_theme
+    # Separate panels when multiple comparisons are selected
+    if (length(comparisons) > 1L) {
+      p <- p +
+        ggplot2::facet_wrap(
+          ~Comparison,
+          scales = "free"
+        )
     } else {
-      n_panels <- length(comparisons)
-      n_rows <- ceiling(sqrt(n_panels))
-      n_cols <- ceiling(n_panels / n_rows)
-      par(
-        mfrow = c(n_rows, n_cols),
-        mar = c(4, 4, 3, 1) + 0.1
-      )
-      for (comp in comparisons) {
-        draw_joint_ellipse(comp)
-      }
+      p <- p +
+        ggplot2::labs(
+          subtitle = paste0(
+            comparisons[1],
+            " vs reference"
+          )
+        )
     }
-    return(invisible(x))
+    return(p)
   }
 }
 
